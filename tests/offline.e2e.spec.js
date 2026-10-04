@@ -91,7 +91,7 @@ test.describe('hosted offline contract', () => {
     // object to talk to until the boot promise settles.
     await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 60000 });
     await expect(page.locator('#editor-canvas')).toBeVisible();
-    await page.getByRole('button', { name: 'Enter Studio' }).click();
+    await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready');
     await expect(page.locator('#offline-state')).toHaveAttribute('data-state', 'ready', { timeout: 30000 });
     await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
 
@@ -120,7 +120,7 @@ test.describe('hosted offline contract', () => {
     // object to talk to until the boot promise settles.
     await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 60000 });
     await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 30000 });
-    await page.getByRole('button', { name: 'Enter Studio' }).click();
+    await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready');
     await expect(page.locator('#offline-state')).toHaveAttribute('data-state', 'ready', { timeout: 30000 });
     await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
 
@@ -452,7 +452,7 @@ test.describe('hosted offline contract', () => {
   test('gates every runtime replacement behind an explicit dirty-document decision', async ({ page }) => {
     await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 60000 });
-    await page.getByRole('button', { name: 'Enter Studio' }).click();
+    await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready');
 
     const result = await page.evaluate(async () => {
       OS._isDirty = true;

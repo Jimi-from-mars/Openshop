@@ -24,12 +24,16 @@ async function assertCheckoutIdentity(page, url) {
 // The three libraries the editor needs are fetched and SHA-384 verified in page
 // now rather than loaded from <script src>, so nothing is wired up until the
 // boot promise settles.
+async function waitForEditor(page) {
+  await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout:30000 });
+}
+
 async function openApp(page, url, { axe = false } = {}) {
   if (axe) await page.addInitScript({ path: axeSourcePath });
   const targetUrl = url || projectAppUrl();
   if (/^https?:/i.test(targetUrl)) await assertCheckoutIdentity(page, targetUrl);
   await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready', null, { timeout: 30000 });
+  await waitForEditor(page);
 }
 
 async function runCriticalAxe(page) {
@@ -46,28 +50,48 @@ async function runCriticalAxe(page) {
   });
 }
 
-test('keeps a first-class blank workspace separate from the document session @cross-browser', async ({ page }) => {
+test('keeps the welcome page hidden while the editing engine loads @cross-browser', async ({ page }) => {
+  let releaseBoot;
+  const bootGate = new Promise(resolve => { releaseBoot = resolve; });
+  await page.route('https://cdn.jsdelivr.net/**', async route => {
+    await bootGate;
+    await route.fallback();
+  });
+  const pageErrors = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
+
+  const targetUrl = projectAppUrl();
+  if (/^https?:/i.test(targetUrl)) await assertCheckoutIdentity(page, targetUrl);
+  try {
+    await page.goto(targetUrl, { waitUntil:'domcontentloaded' });
+    await expect(page.locator('#welcome-overlay')).toBeHidden();
+    await expect(page.locator('.menu-bar')).toBeVisible();
+    await expect(page.locator('html')).not.toHaveAttribute('data-os-boot', 'ready');
+  } finally {
+    releaseBoot();
+  }
+
+  await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'ready');
+  await expect(page.locator('html')).toHaveAttribute('data-os-document', 'open');
+  await expect(page.locator('#welcome-overlay')).toBeHidden();
+  expect(pageErrors).toEqual([]);
+});
+
+test('enters the editor directly and keeps a blank workspace after closing the document @cross-browser', async ({ page }) => {
   await openApp(page);
 
   const initial = await page.evaluate(() => ({
     document: OS.session.document,
     state: document.documentElement.dataset.osDocument,
-    layers: OS.layers.length
-  }));
-  expect(initial).toEqual({
-    document: { activeId: null, openIds: [], name: null },
-    state: 'blank',
-    layers: 0
-  });
-
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
-  const afterEnter = await page.evaluate(() => ({
-    document: OS.session.document,
-    state: document.documentElement.dataset.osDocument,
     layers: OS.layers.length,
-    dismissed: OS._welcomeDismissed
+    dismissed: OS._welcomeDismissed,
+    dimensions: [OS.canvasW, OS.canvasH],
+    defaults: [OS._prefs.defaultW, OS._prefs.defaultH]
   }));
-  expect(afterEnter).toMatchObject({ state: 'open', layers: 2, dismissed: true });
+  expect(initial).toMatchObject({ state:'open', layers:2, dismissed:true });
+  expect(initial.document.activeId).toBeTruthy();
+  expect(initial.dimensions).toEqual(initial.defaults);
+  await expect(page.locator('#welcome-overlay')).toBeHidden();
   await expect(page.locator('#blank-workspace')).toHaveClass(/hidden/);
   await page.evaluate(() => OS.setTool('brush'));
   const afterClose = await page.evaluate(() => OS.closeDocument({ force: true }).then(() => ({
@@ -89,7 +113,7 @@ test('keeps a first-class blank workspace separate from the document session @cr
 
 test('renders the intentional blank studio as a first-class state @cross-browser', async ({ page }, testInfo) => {
   await openApp(page);
-  await page.evaluate(() => OS.dismissWelcome());
+  await page.evaluate(() => OS.closeDocument({ force:true }));
   await expect(page.locator('#welcome-overlay')).toBeHidden();
   await expect(page.locator('html')).toHaveAttribute('data-os-document', 'blank');
   await expect(page.locator('#layers-empty')).toContainText('No document open');
@@ -117,7 +141,7 @@ test('loads the editor shell and supports core UI interactions @cross-browser', 
     document.dispatchEvent(new MouseEvent('click'));
   });
   await expect(page.locator('#editor-canvas')).toBeVisible();
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
   await expect(page.locator('#welcome-overlay')).toHaveClass(/hidden/);
   await expect(page.locator('.tool-btn[data-tool="select"]').first()).toHaveClass(/active/);
 
@@ -148,7 +172,7 @@ test('loads the editor shell and supports core UI interactions @cross-browser', 
 
 test('groups layers with live hierarchy, persistence, cascading state, and shortcuts @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     OS.addLayer({ name:'Groupable A' });
@@ -197,7 +221,7 @@ test('groups layers with live hierarchy, persistence, cascading state, and short
 
 test('opens command search and keeps both zoom readouts synchronized @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).evaluate(button => button.click());
+  await waitForEditor(page);
 
   const commandButton = page.getByRole('button', { name: 'Open command palette' });
   await expect(commandButton).toBeVisible();
@@ -267,7 +291,7 @@ test('keeps composite controls and responsive drawers accessible in every shell 
 
 test('keeps every slider paired with a keyboard-editable number and supports pixel-perfect zoom @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).evaluate(button => button.click());
+  await waitForEditor(page);
 
   const ranges = await page.evaluate(() => [...document.querySelectorAll('input[type="range"]')].map(range => ({
     id:range.id,
@@ -333,7 +357,7 @@ test('surfaces active document color metadata without stale blank-state values @
 
   await expect(page.locator('#status-bit-depth')).toHaveText('—');
   await expect(page.locator('#status-color-profile')).toHaveText('—');
-  await page.getByRole('button', { name: 'Enter Studio' }).evaluate(button => button.click());
+  await waitForEditor(page);
   await expect(page.locator('#status-bit-depth')).toHaveText('8 bit');
   await expect(page.locator('#status-color-profile')).toHaveText('sRGB IEC61966-2.1');
   await expect(page.locator('#info-color-mode')).toHaveText('RGB / 8 bit');
@@ -364,7 +388,7 @@ test('surfaces active document color metadata without stale blank-state values @
 
 test('shows imported image metadata and makes the export privacy policy explicit @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
   await page.evaluate(() => {
     OS._imageMetadata = OS._normalizeImageMetadata({
       sourceFormat:'jpeg',
@@ -416,7 +440,7 @@ test('keeps the C2PA reader lazy and reports an unreadable detected marker', asy
 
 test('opens a tagged Display P3 raster with an explicit working-space conversion and embeds it on export', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).evaluate(button => button.click());
+  await waitForEditor(page);
   const result = await page.evaluate(async () => {
     const source = document.createElement('canvas');
     source.width = 2;
@@ -453,7 +477,7 @@ test('opens a tagged Display P3 raster with an explicit working-space conversion
 test('frames desktop documents with persistent measured rulers @cross-browser', async ({ page }) => {
   await openApp(page);
   await expect(page.locator('#ruler-h')).toBeHidden();
-  await page.getByRole('button', { name: 'Enter Studio' }).evaluate(button => button.click());
+  await waitForEditor(page);
   await expect(page.locator('body')).toHaveClass(/rulers-on/);
   await expect(page.locator('#ruler-h')).toBeVisible();
   await expect(page.locator('#ruler-v')).toBeVisible();
@@ -481,7 +505,7 @@ test('frames desktop documents with persistent measured rulers @cross-browser', 
 
 test('keeps icon-led status feedback clear of document chrome @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).evaluate(button => button.click());
+  await waitForEditor(page);
   await page.evaluate(() => {
     document.getElementById('toast-container').replaceChildren();
     OS.toast('Saved locally', 'success');
@@ -525,7 +549,7 @@ test('keeps icon-led status feedback clear of document chrome @cross-browser', a
 
 test('transforms and round-trips portable selection files @cross-browser', async ({ page }, testInfo) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).evaluate(button => button.click());
+  await waitForEditor(page);
   await page.waitForFunction(() => getComputedStyle(document.getElementById('welcome-overlay')).display === 'none');
 
   await page.locator('.menu-bar > .menu-item').filter({ hasText:/^Select/ }).click();
@@ -580,7 +604,7 @@ test('transforms and round-trips portable selection files @cross-browser', async
 
 test('exposes View settings as live menu checkboxes and radios @cross-browser', async ({ page }, testInfo) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).evaluate(button => button.click());
+  await waitForEditor(page);
 
   const view = page.locator('.menu-bar > .menu-item').filter({ hasText:/^View/ });
   await view.click();
@@ -632,7 +656,7 @@ test('exposes View settings as live menu checkboxes and radios @cross-browser', 
 
 test('turns the Motion workspace into a fitted frame timeline @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).evaluate(button => button.click());
+  await waitForEditor(page);
   const before = await page.evaluate(() => ({ dirty:OS._isDirty, history:OS.history.length }));
   await page.evaluate(() => OS.setWorkspaceMode('motion', { announce:false }));
 
@@ -675,7 +699,7 @@ test('turns the Motion workspace into a fitted frame timeline @cross-browser', a
 
 test('makes the Move options bar control selection and transform chrome @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).evaluate(button => button.click());
+  await waitForEditor(page);
   await expect(page.locator('#opt-select')).toBeVisible();
   await expect(page.getByRole('group', { name: 'Align selected objects' })).toBeVisible();
 
@@ -732,7 +756,7 @@ test('makes the Move options bar control selection and transform chrome @cross-b
 
 test('navigates Layers and History listboxes without a pointer @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const layers = page.locator('#layers-list');
   await layers.focus();
@@ -755,7 +779,7 @@ test('navigates Layers and History listboxes without a pointer @cross-browser', 
 
 test('navigates colour grids and applies foreground or background swatches by keyboard @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
   await page.getByRole('tab', { name: 'Swatches', exact: true }).click();
 
   const palette = page.locator('#palette-default');
@@ -797,7 +821,7 @@ test('requires collaboration consent and exposes peer identity status', async ({
 
 test('exposes clean, dirty, saving, and saved project states @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const unloadPrevented = () => page.evaluate(() => {
     const event = new Event('beforeunload', { cancelable: true });
@@ -834,7 +858,7 @@ test('exposes clean, dirty, saving, and saved project states @cross-browser', as
 
 test('renders imported ABR tips as bounded raster layers @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const asset = {
@@ -874,7 +898,7 @@ test('renders imported ABR tips as bounded raster layers @cross-browser', async 
 
 test('applies a one-click pixel filter to an active image layer @cross-browser', async ({ page, browserName }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const source = document.createElement('canvas');
@@ -935,7 +959,7 @@ test('applies a one-click pixel filter to an active image layer @cross-browser',
 
 test('reports the OffscreenCanvas filter path and its main-thread fallback @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const renderer = await page.evaluate(async () => {
     await OS._ensureRendererReady();
@@ -958,7 +982,7 @@ test('cancels a running pixel filter without changing pixels or history', async 
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const before = await page.evaluate(async () => {
     const source = document.createElement('canvas');
@@ -1018,7 +1042,7 @@ test('cancels a running pixel filter without changing pixels or history', async 
 
 test('creates a pixel selection from a mocked AI segment mask', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     OS.activateSegmentSelect();
@@ -1235,7 +1259,7 @@ test('decodes and bounds PSD pixels in a worker before committing the document',
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const makeCanvas = (color) => {
@@ -1323,7 +1347,7 @@ test('decodes and bounds PSD pixels in a worker before committing the document',
 test('imports a Photoshop-authored nested PSD fixture', async ({ page }) => {
   const payload = (await readFile(fixturePath('photoshop-nested.psd'))).toString('base64');
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async base64 => {
     const bytes = Uint8Array.from(atob(base64), character => character.charCodeAt(0));
@@ -1381,7 +1405,7 @@ test('round-trips nested PSD groups, blends, opacity, and basic text without dup
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const makeCanvas = (color, width = 16, height = 12) => {
@@ -1586,7 +1610,7 @@ test('round-trips nested PSD groups, blends, opacity, and basic text without dup
 
 test('rejects hostile or cancelled PSD work without mutating the open document', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const makeHeader = ({ width = 4, height = 4 } = {}) => {
@@ -1911,7 +1935,7 @@ test('stores atomic recovery generations, falls back from corruption, and forks 
 
 test('round-trips one document state through save, open, recovery, undo, and redo @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   await page.evaluate(() => {
     OS.createNewDocument(320, 240);
@@ -2091,7 +2115,7 @@ test('round-trips one document state through save, open, recovery, undo, and red
 
 test('keeps layer stacking, locks, visibility, and history in one canonical model @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     OS.createNewDocument(240, 180);
@@ -2237,7 +2261,7 @@ test('records validated commands and replays mixed edits as one atomic action', 
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     OS.createNewDocument(160, 120, { resetProject: true, clean: true });
@@ -2364,7 +2388,7 @@ test('undoes destructive canvas and frame transactions without state loss', asyn
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     OS.createNewDocument(96, 64, { resetProject: true, clean: true });
@@ -2706,7 +2730,7 @@ test('drives the editor from an embedding host over a versioned contract @cross-
 
 test('names states and keeps the branch an edit-after-undo used to delete @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const add = (fill, name) => {
@@ -2788,7 +2812,7 @@ test('imports SVG as editable shapes and strips anything executable @cross-brows
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const markup = [
@@ -2851,7 +2875,7 @@ test('traces a raster layer into editable paths that survive SVG and PDF export 
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const traced = await page.evaluate(async () => {
     const size = 64;
@@ -2949,7 +2973,7 @@ test('traces a raster layer into editable paths that survive SVG and PDF export 
 
 test('reconstructs an enlargement with a real model and falls back honestly @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     // A 200x200 source with a 128px tile is a 2x2 grid, so the seam maths and
@@ -3077,7 +3101,7 @@ test('drags gradient stops on canvas and colours text decorations @cross-browser
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const gradient = await page.evaluate(async () => {
     OS.state.gradType = 'linear';
@@ -3166,7 +3190,7 @@ test('formats text ranges through project save/load and export loss reporting @c
   const pageErrors = [];
   page.on('pageerror', error => pageErrors.push(error.message));
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const text = new fabric.IText('Hello world', { left:30, top:30, fontSize:24, fill:'#ffffff' });
@@ -3226,7 +3250,7 @@ test('formats text ranges through project save/load and export loss reporting @c
 
 test('reports what it sent and can refuse every uncached download @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // The three pinned boot libraries are fetched before anything else runs, so
   // the ledger has to have been installed ahead of them to be worth trusting.
@@ -3318,7 +3342,7 @@ test('exports real alpha or matte pixels and presents format loss before downloa
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     OS.createNewDocument(32, 24, { resetProject: true, clean: true });
@@ -3540,7 +3564,7 @@ test('encodes deterministic verified AVIF and reopens it @cross-browser', async 
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const originalFetch = window.fetch;
@@ -3697,7 +3721,7 @@ test('imports HEIC and JPEG XL through native-first verified decoder paths @cros
   const heicBase64 = (await heicResponse.body()).toString('base64');
 
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async ({ jxlBase64: jxlSource, heicBase64: heicSource }) => {
     const decodeBase64 = value => {
@@ -3767,7 +3791,7 @@ test('imports HEIC and JPEG XL through native-first verified decoder paths @cros
 
 test('round-trips OpenRaster layer order, geometry, opacity, visibility, and required files @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const png = (width, height, color) => {
@@ -3890,7 +3914,7 @@ test('round-trips OpenRaster layer order, geometry, opacity, visibility, and req
 
 test('mirrors tool, layer, selection, and actions for assistive tech', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   await page.locator('button[title="New Layer"]').click();
 
@@ -4053,7 +4077,7 @@ test('keeps dialog actions visible and operable across narrow portrait and lands
 
 test('keeps focus inside an open dialog when something behind it claims focus @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
   // The welcome overlay only fades; it keeps its layout box for the length of
   // the transition, and the class change that dismisses it is what wakes the
   // observer that adopts dialogs. It must not be re-adopted on the way out.
@@ -4118,7 +4142,7 @@ test('renders persisted UI data without activating markup', async ({ page }) => 
 
 test('keeps zoom cheap and coalesces inspector redraws after edits', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     // Make the navigator visible so the minimap actually renders.
@@ -4162,7 +4186,7 @@ test('keeps zoom cheap and coalesces inspector redraws after edits', async ({ pa
 
 test('applies every theme across the studio chrome and persists the choice', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const sample = () => page.evaluate(() => {
     const bg = (sel) => {
@@ -4280,7 +4304,7 @@ test('refuses documents above the measured canvas ceiling before allocation @cro
 
 test('progressively enhances menus and dialogs with anchored native popovers @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
   await expect(page.locator('#welcome-overlay')).toBeHidden();
 
   const support = await page.evaluate(() => ({
@@ -4386,7 +4410,7 @@ test('retains the positioned menu and managed-dialog fallback without CSS anchor
     });
   });
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   expect(await page.evaluate(() => OS._nativePopoverUI)).toBe(false);
   await expect(page.locator('html')).not.toHaveClass(/os-native-popovers/);
@@ -4413,7 +4437,7 @@ test('retains the positioned menu and managed-dialog fallback without CSS anchor
 
 test('matches tool shortcuts by physical key under a Cyrillic layout @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(() => {
     OS.setTool('select');
@@ -4429,7 +4453,7 @@ test('matches tool shortcuts by physical key under a Cyrillic layout @cross-brow
 
 test('drives the whole menubar from the keyboard with clean accessible names @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const menubar = page.getByRole('menubar', { name: 'Main menu' });
   await expect(menubar).toBeVisible();
@@ -4592,7 +4616,7 @@ test('reflects document command state in menu rows and blocks disabled activatio
 
 test('menus stay open while the pointer travels from the title into them @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
   await expect(page.locator('#welcome-overlay')).toBeHidden();
 
   // The dropdown is offset below its title. Every previous menu test clicked,
@@ -4656,7 +4680,7 @@ test('menus stay open while the pointer travels from the title into them @cross-
 
 test('Tab moves focus through the editor instead of toggling panels @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
   // The welcome overlay fades for 400ms before it is removed from layout.
   await expect(page.locator('#welcome-overlay')).toBeHidden();
 
@@ -4692,7 +4716,7 @@ test('Tab moves focus through the editor instead of toggling panels @cross-brows
 
 test('traps focus inside dialogs and returns it to whatever opened them @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // Open New Image from the menubar so the trigger is a real focused control.
   await page.locator('.menu-bar > .menu-item').first().focus();
@@ -4794,7 +4818,7 @@ test('keeps a decision-only dialog on screen when Escape is pressed', async ({ p
 
 test('resolves accent-derived chrome through the token scale in every theme', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const sampled = await page.evaluate(async () => {
     const read = () => {
@@ -4897,7 +4921,7 @@ test('keeps chrome color declarations on the theme token scale @cross-browser', 
 
 test('runs every migrated pixel filter off the main thread with unchanged math @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const outcome = await page.evaluate(async () => {
     const W = 8, H = 8;
@@ -5041,7 +5065,7 @@ test('runs every migrated pixel filter off the main thread with unchanged math @
 
 test('applies an auto adjustment through the async worker path and records history', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const oc = document.createElement('canvas');
@@ -5085,7 +5109,7 @@ test('applies an auto adjustment through the async worker path and records histo
 
 test('lets a second AI request take over from the model load it cancels', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const toasts = [];
@@ -5131,7 +5155,7 @@ test('lets a second AI request take over from the model load it cancels', async 
 
 test('deletes the selected pixels at any zoom or pan, not the ones under the old viewport @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     OS.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
@@ -5198,7 +5222,7 @@ test('deletes the selected pixels at any zoom or pan, not the ones under the old
 
 test('keeps the marching-ants box over the selection when the viewport moves', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const box = await page.evaluate(async () => {
     OS.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
@@ -5224,7 +5248,7 @@ test('keeps the marching-ants box over the selection when the viewport moves', a
 
 test('rescales a pre-document-space selection mask from an older project', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(() => {
     // Projects saved before masks were document-space stored them at the
@@ -5266,7 +5290,7 @@ test('rescales a pre-document-space selection mask from an older project', async
 
 test('translates toasts and command labels, and counts them as coverage @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // The inventory includes DOM labels, command-palette labels, static toast/_t
   // literals from the single-file source, and messages seen at runtime.
@@ -5316,7 +5340,7 @@ test('translates toasts and command labels, and counts them as coverage @cross-b
 
 test('collects diagnostics a bug report can attach @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // Failures reached the user as a toast and the developer as nothing, so
   // every issue filed so far is prose and a screenshot.
@@ -5364,7 +5388,7 @@ test('collects diagnostics a bug report can attach @cross-browser', async ({ pag
 
 test('honours EXIF orientation on import @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // Phone and camera JPEGs carry rotation in EXIF rather than in the pixels,
   // and nothing read it — so those photos imported sideways.
@@ -5424,7 +5448,7 @@ test('honours EXIF orientation on import @cross-browser', async ({ page }) => {
 test('imports an EXIF-bearing JPEG fixture upright', async ({ page }) => {
   const payload = (await readFile(fixturePath('exif-orientation-6.jpg'))).toString('base64');
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async base64 => {
     const bytes = Uint8Array.from(atob(base64), character => character.charCodeAt(0));
@@ -5451,7 +5475,7 @@ test('imports an EXIF-bearing JPEG fixture upright', async ({ page }) => {
 test('imports every frame from a real animated GIF fixture without ImageDecoder @cross-browser', async ({ page }) => {
   const payload = (await readFile(fixturePath('animated-multiframe.gif'))).toString('base64');
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async base64 => {
     const bytes = Uint8Array.from(atob(base64), character => character.charCodeAt(0));
@@ -5516,7 +5540,7 @@ test('imports every frame from a real animated GIF fixture without ImageDecoder 
 
 test('routes animated image intents consistently and preserves placed timing metadata @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const file = new File([new Uint8Array([1, 2, 3])], 'animated.gif', { type:'image/gif' });
@@ -5609,7 +5633,7 @@ test('routes animated image intents consistently and preserves placed timing met
 
 test('imports every PDF page as an editable layer @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const { jsPDF } = window.jspdf;
@@ -5641,7 +5665,7 @@ test('imports every PDF page as an editable layer @cross-browser', async ({ page
 
 test('imports animated WebP frames with microsecond durations converted to timeline timing', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const originalDecoder = window.ImageDecoder;
@@ -5695,7 +5719,7 @@ test('imports animated WebP frames with microsecond durations converted to timel
 
 test('loads the verified LibRaw runtime and imports a demosaiced RAW preview', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const LibRaw = await OS._loadLibRaw();
@@ -5734,7 +5758,7 @@ test('loads the verified LibRaw runtime and imports a demosaiced RAW preview', a
 
 test('exports a smaller, more accurate animated GIF than the legacy encoder', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const width = 96;
@@ -5800,7 +5824,7 @@ test('exports a smaller, more accurate animated GIF than the legacy encoder', as
 
 test('accepts image files from clipboard paste and drag-and-drop', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const makeFile = async (name, color) => {
@@ -5860,7 +5884,7 @@ test('accepts image files from clipboard paste and drag-and-drop', async ({ page
 
 test('copies and cuts pixel selections through PNG and the system clipboard @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     OS.createNewDocument(8, 8, { resetProject:true, clean:true });
@@ -5955,7 +5979,7 @@ test('stays usable in forced-colors mode', async ({ page }) => {
   // background. There was no forced-colors handling at all.
   await page.emulateMedia({ forcedColors: 'active' });
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(() => {
     const read = (el, prop) => getComputedStyle(el).getPropertyValue(prop);
@@ -5988,7 +6012,7 @@ test('stays usable in forced-colors mode', async ({ page }) => {
 
 test('selections add, subtract and intersect @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // No boolean modes existed at all — the most-reacted open issue on the
   // nearest open-source rival, and a baseline expectation from Photoshop.
@@ -6050,7 +6074,7 @@ test('selections add, subtract and intersect @cross-browser', async ({ page }) =
 
 test('objects snap to the canvas and to each other @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // Issue #3: there was no "adsorption" between layers or against the
   // artboard, so composing anything meant eyeballing pixel positions. Only
@@ -6103,7 +6127,7 @@ test('objects snap to the canvas and to each other @cross-browser', async ({ pag
 
 test('lasso and pen paths close by clicking their start point @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // Issue #3: neither tool had "suction" on the start and end points, so an
   // outline could not reliably be completed.
@@ -6158,7 +6182,7 @@ test('lasso and pen paths close by clicking their start point @cross-browser', a
 
 test('enables the highest-value parity tools with real selection, vector, shape, and warp paths', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     OS.createNewDocument(160, 120, '#ffffff');
@@ -6253,7 +6277,7 @@ test('enables the highest-value parity tools with real selection, vector, shape,
 
 test('runs Refine Edge and Telea inpainting through the cancellable filter worker', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const width = 9, height = 9;
@@ -6290,7 +6314,7 @@ test('runs Refine Edge and Telea inpainting through the cancellable filter worke
 
 test('previews and applies Refine Edge, then commits one Spot Healing history step', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   await page.evaluate(() => {
     OS.createNewDocument(32, 32, '#ffffff');
@@ -6344,7 +6368,7 @@ test('previews and applies Refine Edge, then commits one Spot Healing history st
 
 test('the panel stack resizes by drag and by keyboard @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // Issue #3 asked for drag bars between the panel sections. A drag-only
   // control would fail WCAG 2.5.7, so the separator takes focus and keys too.
@@ -6392,7 +6416,7 @@ test('the panel stack resizes by drag and by keyboard @cross-browser', async ({ 
 
 test('creates documents in physical units at a chosen resolution @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // Issue #3 asked for millimetre sizes; the templates were pixel-only with no
   // resolution anywhere, and both exporters assumed 96 PPI.
@@ -6454,7 +6478,7 @@ test('creates documents in physical units at a chosen resolution @cross-browser'
 
 test('says what best-effort storage actually costs @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // The panel reported the persisted flag but never said what it meant, and
   // WebKit clears script-writable storage after seven days without a visit.
@@ -6496,7 +6520,7 @@ test('says what best-effort storage actually costs @cross-browser', async ({ pag
 
 test('toasts dismiss themselves, cap their stack, and stop repeating @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const container = document.getElementById('toast-container');
@@ -6542,7 +6566,7 @@ test('toasts dismiss themselves, cap their stack, and stop repeating @cross-brow
 
 test('brush and eraser strokes become layer pixels, not draggable paths @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // Issue #3: a stroke stayed a selectable Fabric path above the layer, so an
   // eraser's "erasure" could be dragged around afterwards.
@@ -6626,7 +6650,7 @@ test('brush and eraser strokes become layer pixels, not draggable paths @cross-b
 
 test('object tools create their own layer instead of stacking @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // Issue #3: "the corresponding text layer will pop up on the layer page ...
   // instead of stacking all elements under one layer". Everything landed in
@@ -6681,7 +6705,7 @@ test('object tools create their own layer instead of stacking @cross-browser', a
 
 test('warns before a document rebuild discards guides, frames or PSD metadata @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // Crop, flatten and canvas rotate/flip all rebuild the document through
   // createNewDocument, which silently drops all three. The user saw only
@@ -6728,7 +6752,7 @@ test('warns before a document rebuild discards guides, frames or PSD metadata @c
 
 test('selection bounds are document coordinates whatever made them @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // Bounds used to mean screen pixels for a marquee and document pixels for a
   // mask, so consumers disagreed about which they were holding and a project
@@ -6787,7 +6811,7 @@ test('selection bounds are document coordinates whatever made them @cross-browse
 
 test('exposes list, tool and status state to assistive technology @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     OS.createNewDocument(40, 30, '#ffffff');
@@ -6874,7 +6898,7 @@ test('dismissing the welcome screen twice does not double-bind the editor @cross
 
 test('applying a filter commits the value on screen, not the last debounce tick @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // The preview is debounced by 50ms while Apply saved history immediately and
   // nulled the target, so the pending tick returned early and the committed
@@ -6903,7 +6927,7 @@ test('applying a filter commits the value on screen, not the last debounce tick 
 
 test('deleting a mask selection edits the image, not the selection tint @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // The tint overlay is an image and is always added last, so "topmost image"
   // resolved to it whenever a mask was active. It belongs to no layer, so the
@@ -6943,7 +6967,7 @@ test('deleting a mask selection edits the image, not the selection tint @cross-b
 
 test('Grow and Similar write full coverage, not a token 1 @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // The mask is 0-255 coverage. These two wrote 1, which reads as 0.4%
   // selected: the tint rounded to invisible and a delete left the pixels
@@ -6980,7 +7004,7 @@ test('Grow and Similar write full coverage, not a token 1 @cross-browser', async
 
 test('the magic wand selects the same pixels at any zoom or pan @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // Sampling used to come off the viewport surface, so the selection depended
   // on the zoom it was made at — and below 100% it was built at that reduced
@@ -7027,7 +7051,7 @@ test('the magic wand selects the same pixels at any zoom or pan @cross-browser',
 
 test('selects the shape a lasso encloses rather than its bounding box', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(() => {
     OS.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
@@ -7071,7 +7095,7 @@ test('selects the shape a lasso encloses rather than its bounding box', async ({
 
 test('maps lasso points through the viewport before rasterising', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(() => {
     // Same on-screen gesture, but drawn while zoomed to 2x and panned.
@@ -7096,7 +7120,7 @@ test('maps lasso points through the viewport before rasterising', async ({ page 
 
 test('feathers a selection into partial coverage instead of dilating it', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(() => {
     OS.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
@@ -7133,7 +7157,7 @@ test('feathers a selection into partial coverage instead of dilating it', async 
 
 test('deletes through a downscaled layer without leaving gaps', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     OS.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
@@ -7190,7 +7214,7 @@ test('deletes through a downscaled layer without leaving gaps', async ({ page })
 
 test('meets WCAG 2.2 text contrast across every theme @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const audit = await page.evaluate(async () => {
     const parse = (value) => {
@@ -7279,7 +7303,7 @@ test('meets WCAG 2.2 text contrast across every theme @cross-browser', async ({ 
 
 test('gives every pointer target at least 24 by 24 CSS pixels', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const undersized = await page.evaluate(async () => {
     try { OS.showPreferences(); } catch (error) {}
@@ -7306,7 +7330,7 @@ test('gives every pointer target at least 24 by 24 CSS pixels', async ({ page })
 
 test('offers a keyboard path for moving, resizing, and reordering', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const rect = new fabric.Rect({ left: 100, top: 100, width: 60, height: 40, fill: '#888', strokeWidth: 0 });
@@ -7355,7 +7379,7 @@ test('offers a keyboard path for moving, resizing, and reordering', async ({ pag
 
 test('applies one edit-currency rule to every commit path', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const messages = [];
@@ -7430,7 +7454,7 @@ test('records opened documents in the welcome screen Recent list', async ({ page
   // rendering an empty heading.
   await expect(page.locator('#recent-files-area .recent-item')).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const created = await page.evaluate(async () => {
     OS.createNewDocument(640, 480, { resetProject: true });
@@ -7472,7 +7496,7 @@ test('records opened documents in the welcome screen Recent list', async ({ page
 
 test('honours the New Image background choice instead of ignoring it', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   // Sample through the export path so the reading is in document space and
   // independent of the current zoom.
@@ -7539,7 +7563,7 @@ test('honours the New Image background choice instead of ignoring it', async ({ 
 
 test('reads every palette format the file picker advertises', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const asFile = (data, name, type) => new File([data], name, { type });
@@ -7622,7 +7646,7 @@ test('persists preferences across a reload instead of only saying it did', async
   await openApp(page);
   await page.evaluate(() => { localStorage.removeItem('os_prefs'); localStorage.removeItem('os_theme'); });
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   await page.evaluate(() => OS.showPreferences());
   await expect(page.getByRole('button', { name: 'Export Settings' })).toBeVisible();
@@ -7657,7 +7681,7 @@ test('persists preferences across a reload instead of only saying it did', async
 
   // The whole set has to come back, not just the language.
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
   const restored = await page.evaluate(() => ({
     defaultW: OS._prefs.defaultW,
     defaultH: OS._prefs.defaultH,
@@ -7675,7 +7699,7 @@ test('persists preferences across a reload instead of only saying it did', async
     version: 1, defaultW: -50, defaultH: 1e9, gridSize: 0, snapTolerance: 'x', maxHistory: 0, accent: 'javascript:alert(1)'
   })));
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
   const clamped = await page.evaluate(() => ({
     defaultW: OS._prefs.defaultW,
     gridSize: OS.gridSize,
@@ -7692,7 +7716,7 @@ test('persists preferences across a reload instead of only saying it did', async
 
 test('previews Levels and Color Balance without a full-resolution PNG per tick', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     // A source large enough to trip the proxy threshold.
@@ -7791,7 +7815,7 @@ test('previews Levels and Color Balance without a full-resolution PNG per tick',
 test('keeps 4K adjustment and filter previews responsive while Apply stays full resolution', async ({ page }) => {
   test.setTimeout(60000);
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const width = 4000, height = 3000;
@@ -7911,7 +7935,7 @@ test('keeps 4K adjustment and filter previews responsive while Apply stays full 
 test('resolves one mobile layout rather than two blocks that fight each other', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const layout = await page.evaluate(() => {
     // The timeline is display:none until opened, so a hidden element would
@@ -8000,7 +8024,7 @@ test('keeps one tablet block with the winning panel width', async ({ page }) => 
 
 test('updates document language and direction when the locale changes @cross-browser', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(() => {
     const read = () => ({
@@ -8033,7 +8057,7 @@ test('updates document language and direction when the locale changes @cross-bro
 
 test('keeps interface locale direction separate from explicit artwork text direction', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const text = OS._applyDirectionToObject(new fabric.IText('مرحبا OpenShop 2026', { left: 10, top: 10, fontSize: 20 }));
@@ -8123,7 +8147,7 @@ test('keeps interface locale direction separate from explicit artwork text direc
 
 test('mirrors menu chrome instead of stranding it on the wrong edge', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const measure = () => page.evaluate(() => {
     const root = document.querySelector('.menu-bar > .menu-item');
@@ -8168,7 +8192,7 @@ test('mirrors menu chrome instead of stranding it on the wrong edge', async ({ p
 
 test('flags untranslated interface strings through the pseudo-locale', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(() => {
     const sample = () => [...document.querySelectorAll('.menu-bar > .menu-item')]
@@ -8236,7 +8260,7 @@ test('flags untranslated interface strings through the pseudo-locale', async ({ 
 
 test('selects WebGPU only when an adapter resolves and falls back to WASM', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const original = navigator.gpu;
@@ -8281,7 +8305,7 @@ test('selects WebGPU only when an adapter resolves and falls back to WASM', asyn
 
 test('preflights the exact model download and passes the selected device to the pipeline', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     Object.defineProperty(navigator, 'gpu', {
@@ -8404,7 +8428,7 @@ test('reloads the verified Transformers.js WASM runtime offline after one online
 
 test('uses the Transformers.js 4.x background-removal pipeline with pinned MODNet', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const target = {
@@ -8469,7 +8493,7 @@ test('uses the Transformers.js 4.x background-removal pipeline with pinned MODNe
 
 test('distinguishes the model-backed enlarge from the resample one', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const placement = await page.evaluate(() => {
     const menuOf = (action) => {
@@ -8511,7 +8535,7 @@ test('distinguishes the model-backed enlarge from the resample one', async ({ pa
 
 test('reports and clears cached model files per model', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const model = 'Xenova/modnet';
@@ -8622,6 +8646,7 @@ test('refuses to start when a boot library fails its integrity check', async ({ 
   await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'failed', null, { timeout: 30000 });
 
   // Substituted bytes must stop the editor, not quietly become the engine.
+  await expect(page.locator('#welcome-boot-status')).toBeVisible();
   await expect(page.locator('#welcome-boot-status')).toContainText('Could not load the editing engine');
   expect(await page.evaluate(() => window.jspdf?.tampered)).toBeUndefined();
   expect(consoleErrors.join('\n')).toMatch(/integrity check/i);
@@ -8645,6 +8670,7 @@ test('surfaces an editor initialization failure with a reload control', async ({
   await page.waitForFunction(() => document.documentElement.dataset.osBoot === 'failed', null, { timeout: 30000 });
 
   const panel = page.locator('#welcome-boot-status');
+  await expect(panel).toBeVisible();
   await expect(panel).toHaveAttribute('role', 'alert');
   await expect(panel).toHaveAttribute('data-boot-failure-stage', 'editor initialization');
   await expect(panel).toContainText('Could not load the editing engine during editor initialization');
@@ -8655,7 +8681,7 @@ test('surfaces an editor initialization failure with a reload control', async ({
 
 test('animation playback moves the highlight without rebuilding the strip', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -8700,7 +8726,7 @@ test('animation playback moves the highlight without rebuilding the strip', asyn
 
 test('falls back cleanly when an optional platform capability is missing @cross-browser', async ({ page, browserName }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const out = {};
@@ -8805,7 +8831,7 @@ test('falls back cleanly when an optional platform capability is missing @cross-
 test('runs the Photon WASM backend for real on the operation it is allowed @slow', async ({ page }) => {
   test.setTimeout(120000);
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const swatch = document.createElement('canvas');
@@ -8894,7 +8920,7 @@ test('runs the Photon WASM backend for real on the operation it is allowed @slow
 
 test('registers a sandbox plugin and lets it contribute a command', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const source = `const host = globalThis.__openShopPluginHost;
@@ -8949,7 +8975,7 @@ test('registers a sandbox plugin and lets it contribute a command', async ({ pag
 
 test('audits plugin provenance and revokes the grant from Preferences', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const manifest = await page.evaluate(async () => {
     const source = 'window.addEventListener("message", () => {});';
@@ -8993,7 +9019,7 @@ test('audits plugin provenance and revokes the grant from Preferences', async ({
 test('only runs Photon for operations that match the JavaScript worker exactly', async ({ page }) => {
   test.setTimeout(120000);
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const report = await page.evaluate(async () => {
     const width = 16, height = 16;
@@ -9059,7 +9085,7 @@ test('only runs Photon for operations that match the JavaScript worker exactly',
 test('admits only GPU filters that stay within the measured parity tolerance', async ({ page }) => {
   test.setTimeout(120000);
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const report = await page.evaluate(async () => {
     const width = 16, height = 16;
@@ -9121,7 +9147,7 @@ test('admits only GPU filters that stay within the measured parity tolerance', a
 
 test('hands AI pipelines canvas pixels, and cancels or fails without touching the layer', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     const swatch = document.createElement('canvas');
@@ -9234,7 +9260,7 @@ test('hands AI pipelines canvas pixels, and cancels or fails without touching th
 
 test('sizes exported PDF pages and PSD resolution to the document', async ({ page }) => {
   await openApp(page);
-  await page.getByRole('button', { name: 'Enter Studio' }).click();
+  await waitForEditor(page);
 
   const result = await page.evaluate(async () => {
     OS.createNewDocument(600, 400, { resetProject: true, background: '#ffffff' });
