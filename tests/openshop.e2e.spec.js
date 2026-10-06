@@ -65,6 +65,7 @@ test('keeps the welcome page hidden while the editing engine loads @cross-browse
   try {
     await page.goto(targetUrl, { waitUntil:'domcontentloaded' });
     await expect(page.locator('#welcome-overlay')).toBeHidden();
+    await expect(page.locator('#blank-workspace')).toHaveCount(0);
     await expect(page.locator('.menu-bar')).toBeVisible();
     await expect(page.locator('html')).not.toHaveAttribute('data-os-boot', 'ready');
   } finally {
@@ -92,7 +93,7 @@ test('enters the editor directly and keeps a blank workspace after closing the d
   expect(initial.document.activeId).toBeTruthy();
   expect(initial.dimensions).toEqual(initial.defaults);
   await expect(page.locator('#welcome-overlay')).toBeHidden();
-  await expect(page.locator('#blank-workspace')).toHaveClass(/hidden/);
+  await expect(page.locator('#blank-workspace')).toHaveCount(0);
   await page.evaluate(() => OS.setTool('brush'));
   const afterClose = await page.evaluate(() => OS.closeDocument({ force: true }).then(() => ({
     document: OS.session.document,
@@ -120,7 +121,7 @@ test('renders the intentional blank studio as a first-class state @cross-browser
   await expect(page.locator('#history-list .history-empty')).toContainText('History begins after you open a document.');
   await expect(page.locator('#select-auto')).toBeDisabled();
   await expect(page.locator('#select-transform')).toBeDisabled();
-  await expect(page.locator('#blank-workspace .blank-kicker')).toHaveText('Local workspace ready');
+  await expect(page.locator('#blank-workspace')).toHaveCount(0);
 
   if (testInfo.project.name === 'chromium') {
     await expect(page).toHaveScreenshot('openshop-blank-shell.png', {

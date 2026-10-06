@@ -19,7 +19,7 @@
 <meta name="twitter:image" content="./design/openshop-social-preview.png">
 <meta name="twitter:image:alt" content="OpenShop editing a layered poster in the browser">
 <meta name="theme-color" content="#0a0c10" id="theme-color-meta">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'none'; script-src 'self' 'sha256-AI1RkMtQdXpsyI97xMvbcaXhxaPFGso1GTonDhNDAs8=' 'sha256-xsduI0eqoPG97oAHktp/VHJr9NlJcSp1xNWMq6ZUvw4=' 'wasm-unsafe-eval' blob:; require-trusted-types-for 'script'; trusted-types openshop-loader; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'none'; script-src 'self' 'sha256-AI1RkMtQdXpsyI97xMvbcaXhxaPFGso1GTonDhNDAs8=' 'sha256-gbr17DIDgsErXMPKHqj+397LDXQxf7KYt9u1H/1PvGo=' 'wasm-unsafe-eval' blob:; require-trusted-types-for 'script'; trusted-types openshop-loader; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co blob:; worker-src 'self' blob:; frame-src 'self' blob:;">
 <title>OpenShop v0.31.0 | Browser Image Editor</title>
 <script>
 // OpenShop-specific Fabric configuration. The editor uses Fabric 7's native
@@ -589,13 +589,6 @@ html.os-native-popovers #context-menu[popover]{position-area:block-end span-inli
 .bottom-tab:hover{background:var(--bg-depth-3);color:var(--text-secondary)}
 .bottom-tab[aria-selected="true"]{color:var(--accent-hover);background:var(--accent-dim);box-shadow:inset 0 2px 0 var(--accent)}
 .bottom-tab:focus-visible{box-shadow:var(--focus-ring)}
-#blank-workspace{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:110;pointer-events:none;text-align:center}
-#blank-workspace.hidden{display:none}
-#blank-workspace .blank-card{pointer-events:auto;max-width:360px;padding:28px 32px;border:1px solid var(--border);border-radius:var(--radius-lg);background:color-mix(in srgb,var(--bg-depth-2) 92%,transparent);box-shadow:0 18px 48px rgba(0,0,0,.28)}
-#blank-workspace h2{margin:0 0 8px;color:var(--text-primary);font-size:17px;font-weight:600}
-#blank-workspace p{margin:0 0 16px;color:var(--text-muted);font-size:12px;line-height:1.5}
-#blank-workspace .blank-actions{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
-#blank-workspace .blank-actions .btn{min-height:32px}
 .selection-rect{position:absolute;pointer-events:none;z-index:100;
  background-image:linear-gradient(90deg,var(--mask-black) 50%,var(--mask-white) 50%),linear-gradient(90deg,var(--mask-black) 50%,var(--mask-white) 50%),linear-gradient(0deg,var(--mask-black) 50%,var(--mask-white) 50%),linear-gradient(0deg,var(--mask-black) 50%,var(--mask-white) 50%);
 background-size:8px 1px,8px 1px,1px 8px,1px 8px;
@@ -2458,66 +2451,6 @@ html[data-os-document="blank"] #canvas-hud{display:none}
   font:600 10px 'JetBrains Mono',monospace;
 }
 .canvas-hud-sep{width:1px;height:18px;margin:0 2px;background:var(--border-active)}
-#blank-workspace .blank-card{
-  position:relative;
-  max-width:390px;
-  padding:32px 36px;
-  overflow:hidden;
-  border-color:color-mix(in srgb,var(--border-active) 70%,transparent);
-  border-radius:15px;
-  background:linear-gradient(180deg,var(--bg-depth-2),var(--bg-depth-1));
-  box-shadow:0 28px 72px rgba(0,0,0,.42),inset 0 1px rgba(255,255,255,.045);
-}
-#blank-workspace .blank-card::before{
-  content:'';
-  position:absolute;
-  left:24%;
-  right:24%;
-  top:0;
-  height:2px;
-  background:linear-gradient(90deg,transparent,var(--accent),var(--accent-alt),transparent);
-}
-#blank-workspace .blank-symbol{
-  display:grid;
-  place-items:center;
-  width:46px;
-  height:46px;
-  margin:0 auto 13px;
-  border:1px solid rgba(91,124,255,.34);
-  border-radius:12px;
-  color:var(--accent-hover);
-  background:linear-gradient(145deg,rgba(91,124,255,.2),rgba(139,92,246,.08));
-  box-shadow:0 12px 28px rgba(91,124,255,.15),inset 0 1px rgba(255,255,255,.08);
-}
-#blank-workspace .blank-symbol svg{width:23px;height:23px}
-#blank-workspace .blank-kicker{
-  display:block;
-  margin-bottom:7px;
-  color:var(--accent-hover);
-  font:700 8px 'JetBrains Mono',monospace;
-  letter-spacing:.12em;
-  text-transform:uppercase;
-}
-#blank-workspace h2{font-size:19px;letter-spacing:-.02em}
-#blank-workspace .blank-actions .btn{display:flex;align-items:center;gap:7px;min-height:38px;padding:7px 13px;border-radius:8px}
-#blank-workspace .blank-actions .btn svg{width:15px;height:15px}
-#blank-workspace .blank-hint{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:7px;
-  margin:16px 0 0;
-  color:var(--text-muted);
-  font:500 9px 'DM Sans',sans-serif;
-}
-#blank-workspace .blank-hint kbd{
-  padding:3px 5px;
-  border:1px solid var(--border-active);
-  border-radius:4px;
-  color:var(--text-secondary);
-  background:var(--bg-depth-1);
-  font:600 8px 'JetBrains Mono',monospace;
-}
 #layers-empty{
   margin:10px 0;
   padding:20px 12px;
@@ -2731,7 +2664,6 @@ html[data-os-bottom-tab="timeline"] body:not(.fullscreen) .ruler-v{
 :root.theme-light #tool-options,
 :root.theme-light .panel-tab-group,
 :root.theme-light #canvas-hud,
-:root.theme-light #blank-workspace .blank-card,
 :root.theme-light #timeline-panel{
   background:linear-gradient(180deg,var(--bg-depth-1),var(--bg-depth-2));
   box-shadow:0 22px 52px var(--chrome-shadow-soft),inset 0 1px rgba(255,255,255,.85);
@@ -2762,7 +2694,6 @@ html[data-os-bottom-tab="timeline"] body:not(.fullscreen) .ruler-v{
   border-color:color-mix(in srgb,var(--border-active) 58%,transparent);
   box-shadow:inset 0 0 90px var(--chrome-shadow-soft),0 18px 42px var(--chrome-shadow-soft);
 }
-:root.theme-light #blank-workspace .blank-symbol{background:color-mix(in srgb,var(--accent) 10%,var(--bg-depth-1));box-shadow:0 12px 28px var(--chrome-shadow-soft),inset 0 1px rgba(255,255,255,.85)}
 :root.theme-light #timeline-frames{background-image:linear-gradient(color-mix(in srgb,var(--border-active) 10%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--border-active) 10%,transparent) 1px,transparent 1px)}
 :root.theme-light .timeline-empty:hover{background:color-mix(in srgb,var(--accent) 10%,var(--bg-depth-2))}
 :root.theme-light #cmd-input{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--border-active) 60%,transparent)}
@@ -2790,7 +2721,6 @@ html[data-os-bottom-tab="timeline"] body:not(.fullscreen) .ruler-v{
 #tool-options,
 .panel-tab-group,
 #canvas-hud,
-#blank-workspace .blank-card,
 #timeline-panel,
 .welcome-hero,
 .welcome-launch{background-color:var(--bg-depth-1)}
@@ -3699,19 +3629,6 @@ html[data-os-workspace="mobile"][data-os-bottom-tab="timeline"] body:not(.fullsc
 <div id="canvas-area" role="application" aria-roledescription="image editor canvas" aria-label="Image canvas" aria-describedby="canvas-a11y-summary canvas-a11y-focus-help" tabindex="0" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight">
     <canvas id="editor-canvas" aria-label="Drawing surface"></canvas>
     <canvas class="canvas-grid" id="grid-overlay"></canvas>
-    <div id="blank-workspace" aria-live="polite">
-        <div class="blank-card">
-            <div class="blank-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 3h11l5 5v13H4z"/><path d="M15 3v5h5M8 14h8M12 10v8"/></svg></div>
-            <span class="blank-kicker">Local workspace ready</span>
-            <h2>No document open</h2>
-            <p>The workspace is ready. Create a canvas or open an image to begin.</p>
-            <div class="blank-actions">
-                <button type="button" class="btn btn-primary" data-os-click="click-001"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New Canvas</button>
-                <button type="button" class="btn" data-os-click="click-002"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h7l2 2h7v10H4z"/><path d="M4 7V5h7l2 2"/></svg>Open Image</button>
-            </div>
-            <p class="blank-hint"><span><kbd>Ctrl N</kbd> New canvas</span><span aria-hidden="true">•</span><span>Drop files anywhere</span></p>
-        </div>
-    </div>
     <div id="guides-container"></div>
     <div id="lasso-overlay" class="lasso-overlay" style="display:none"><svg><polygon class="lasso-path" points=""/><circle class="close-handle" id="lasso-close-handle" r="6" cx="-99" cy="-99"/></svg></div>
     <div id="pen-overlay" class="pen-overlay" style="display:none"><svg><path class="pen-path-preview" d=""/><circle class="close-handle" id="pen-close-handle" r="6" cx="-99" cy="-99"/></svg></div>
@@ -6276,7 +6193,6 @@ const OS = {
                 ? 'No document open. Create a canvas or open an image.'
                 : 'Image canvas');
         }
-        document.getElementById('blank-workspace')?.classList.toggle('hidden', !blank);
         const dims = document.getElementById('canvas-dims');
         if (dims) dims.textContent = blank ? 'No document' : `${this.canvasW} x ${this.canvasH}`;
         this._updateDocumentMetadataReadouts();
