@@ -4391,6 +4391,9 @@ test('progressively enhances menus and dialogs with anchored native popovers @cr
     await tool.click();
     const flyout = page.locator('#flyout-host .tool-flyout:popover-open');
     await expect(flyout).toBeVisible();
+    await expect(flyout).toHaveCSS('min-width', '232px');
+    await expect(flyout.locator('.tool-btn').first()).toHaveCSS('width', '220px');
+    await expect(flyout.locator('.tool-name').first()).toHaveCSS('white-space', 'nowrap');
     expect(await flyout.evaluate((element) =>
       element.style.getPropertyValue('position-anchor').startsWith('--os-anchor-'))).toBe(true);
     await page.keyboard.press('Escape');
