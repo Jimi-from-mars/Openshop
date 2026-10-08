@@ -5,7 +5,7 @@
   "description": "Private browser image editor with layers, PSD interchange, and local export",
   "type": "module",
   "release": {
-    "shellRevision": 6
+    "shellRevision": 7
   },
   "engines": {
     "node": ">=22.22.2"
