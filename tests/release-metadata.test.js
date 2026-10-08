@@ -22,7 +22,7 @@ describe('release metadata', () => {
 
     expect(manifest.version, 'manifest.webmanifest version').toBe(version);
     expect(index, 'index.html title version').toContain(`<title>OpenShop v${version} |`);
-    expect(index, 'index.html about version').toContain(`aria-label="OpenShop version ${version}"`);
+    expect(index, 'brand omits the release version').toContain('aria-label="OpenShop"');
     expect(index, 'index.html runtime version').toContain(`application: { id:'openshop', version:'${version}'`);
     expect(index, 'index.html document version').toContain(`version: '${version}'`);
     expect(readme, 'README version badge').toContain(`version-${version}-blue`);
@@ -67,7 +67,7 @@ describe('release metadata', () => {
     expect(snapshotManifest.badge, 'visual baseline badge').toBe(`v${major}.${minor}`);
     expect(snapshotManifest.project, 'visual baseline project').toBe('chromium');
     expect(snapshotManifest.required.map(entry => entry.testName)).toEqual(expectedTestNames);
-    expect(html, 'visual baseline topbar badge').toContain(`<span class="logo-version">${snapshotManifest.badge}</span>`);
+    expect(html, 'topbar omits the release badge').not.toContain('<span class="logo-version">');
     expect(html, 'visual baseline welcome badge').toContain(`<small>${snapshotManifest.badge}</small>`);
 
     for (const entry of snapshotManifest.required) {

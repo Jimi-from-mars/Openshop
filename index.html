@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-site-palette="private-image-lab-v4">
 <head>
 <meta charset="UTF-8">
 <meta property="og:image" content="./design/openshop-social-preview.png">
@@ -3057,16 +3057,76 @@ html[data-os-workspace="mobile"][data-os-bottom-tab="timeline"] body:not(.fullsc
     --border-active:var(--accent);
   }
   .btn,.tool-btn,.panel-tab{border-width:1px;border-style:solid}
+
+}
+/* Shared Private Image Lab palette, including detached menus and dialogs. */
+:root[data-site-palette]{
+ --bg-depth-0:#fffdf6;--bg-depth-1:#fffdf6;--bg-depth-2:#fff7df;--bg-depth-3:#f8e9bd;--bg-depth-4:#eedaaa;
+ --border:#e8d9b8;--border-active:#b5cbbd;--text-primary:#22201b;--text-secondary:#665f52;--text-muted:#706957;
+ --accent:#1f7a6b;--accent-hover:#105c50;--accent-alt:#b39442;--accent-dim:rgba(31,122,107,.12);
+ --accent-solid:#1f7a6b;--accent-contrast-bg:#105c50;--accent-shadow:rgba(31,122,107,.15);--on-accent:#fff;
+ --success:#1f7a6b;--warning:#846317;--danger:#b84d64;--canvas-bg:#f5efdF;
+ --glass:rgba(255,253,246,.94);--glass-border:rgba(31,122,107,.22);
+ --checker-a:#ded7c5;--checker-b:#fffdf6;--chrome-checker-base:#fffdf6;--chrome-checker-alt:#ded7c5;
+ --chrome-black:#22201b;--note-text:#22201b;--chrome-shadow:rgba(65,47,12,.16);--chrome-shadow-soft:rgba(65,47,12,.08);
+ --guide:#1f7a6b;--smart-guide:#b84d64;--theme-color:#fff7df;
+}
+:root[data-site-palette] body{background:linear-gradient(180deg,#fff7df,#fffdf6);color:var(--text-primary)}
+:root[data-site-palette] #topbar{background:#fffdf6;border-bottom-color:var(--border);box-shadow:0 2px 12px var(--chrome-shadow-soft)}
+:root[data-site-palette] #topbar::after{background:linear-gradient(90deg,transparent,var(--accent),#f4c95d,transparent)}
+:root[data-site-palette] #topbar .logo-mark{background:linear-gradient(135deg,#1f7a6b,#f4c95d);color:white;box-shadow:none}
+:root[data-site-palette] #topbar .logo-word{color:var(--text-primary);text-decoration:none}
+:root[data-site-palette] #topbar .logo-word:hover{color:var(--accent)}
+:root[data-site-palette] #toolbar,
+:root[data-site-palette] #tool-options,
+:root[data-site-palette] .panel-tab-group,
+:root[data-site-palette] #canvas-hud,
+:root[data-site-palette] #timeline-panel,
+:root[data-site-palette] #bottom-tabs,
+:root[data-site-palette] #statusbar{background:var(--bg-depth-1);border-color:var(--border);box-shadow:0 3px 14px var(--chrome-shadow-soft)}
+:root[data-site-palette] .menu-dropdown,
+:root[data-site-palette] .tool-flyout,
+:root[data-site-palette] .modal,
+:root[data-site-palette] .filter-panel,
+:root[data-site-palette] .ai-box,
+:root[data-site-palette] #context-menu,
+:root[data-site-palette] #cmd-box{background:var(--bg-depth-1);border-color:var(--border);box-shadow:0 14px 38px var(--chrome-shadow)}
+:root[data-site-palette] .panel-tabs,
+:root[data-site-palette] .bottom-tab[aria-selected="true"],
+:root[data-site-palette] #command-launch,
+:root[data-site-palette] .local-badge{background:var(--bg-depth-2)}
+:root[data-site-palette] #canvas-area{background-color:var(--canvas-bg);border-color:var(--border);box-shadow:inset 0 0 60px var(--chrome-shadow-soft)}
+:root[data-site-palette] .panel-tab.active{background:var(--accent-dim);color:var(--accent-hover);border-bottom-color:var(--accent)}
+:root[data-site-palette] #canvas-area{background-image:linear-gradient(rgba(102,95,82,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(102,95,82,.06) 1px,transparent 1px);background-size:24px 24px}
+:root[data-site-palette] #canvas-area::after{background:none}
+:root[data-site-palette] #layers-empty{background:var(--bg-depth-2);border-color:var(--border)}
+:root[data-site-palette] .history-item.active{background:var(--accent-dim);color:var(--accent-hover)}
+:root[data-site-palette] .tool-btn.active{background:var(--accent-dim);color:var(--accent-hover)}
+:root[data-site-palette] .menu-item:hover,
+:root[data-site-palette] .menu-item.open,
+:root[data-site-palette] .dd-item:hover{background:var(--accent-dim)}
+:root[data-site-palette] .toast{background:var(--bg-depth-1);color:var(--text-primary);box-shadow:0 8px 24px var(--chrome-shadow)}
+:root[data-site-palette] .layer-item{border-color:var(--border)}
+:root[data-site-palette] .layer-item.active,
+:root[data-site-palette] .history-item.current,
+:root[data-site-palette] .cmd-item.active{background:var(--accent-dim);color:var(--text-primary);box-shadow:inset 2px 0 var(--accent)}
+:root[data-site-palette] .bottom-tab:hover{background:var(--accent-dim);color:var(--accent-hover)}
+:root[data-site-palette] .bottom-tab[aria-selected="true"] output{background:var(--accent-dim)}
+.editor-home-link{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:0 0 auto;padding:8px 11px;margin-left:auto;border:1px solid #cbded0;border-radius:8px;background:#f0f7ec;color:#105c50;text-decoration:none;font:700 12px var(--font-ui);white-space:nowrap}
+.editor-home-link svg{width:15px;height:15px}
+.editor-home-link:hover{background:#e2efdf}
+.editor-home-link:focus-visible,#topbar .logo-word:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media(max-width:680px){.editor-home-link{position:fixed;right:6px;top:6px;z-index:16000;padding:7px 9px;margin:0}:root[data-site-palette] #topbar{padding-right:104px}.editor-home-link svg{display:none}}
+
 </style>
 </head>
 <body>
 
 <!-- ===== TOP MENU ===== -->
 <div id="topbar">
-    <div class="logo" aria-label="OpenShop version 0.31.0">
+    <div class="logo" aria-label="OpenShop">
         <span class="logo-mark">OS</span>
-        <span class="logo-word">OpenShop</span>
-        <span class="logo-version">v0.31</span>
+        <a class="logo-word" href="https://github.com/SysAdminDoc/Openshop" target="_blank" rel="noopener noreferrer" aria-label="OpenShop original project">OpenShop</a>
     </div>
     <div class="menu-bar" role="menubar" aria-label="Main menu">
     <div class="menu-item" role="menuitem" aria-haspopup="true">File
@@ -3360,6 +3420,7 @@ html[data-os-workspace="mobile"][data-os-bottom-tab="timeline"] body:not(.fullsc
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3l7 3v5c0 4.7-2.8 8-7 10-4.2-2-7-5.3-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
         <span>Local only</span>
     </div>
+    <a class="editor-home-link" href="/" aria-label="返回主页"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 11l9-8 9 8M5 10v11h5v-7h4v7h5V10"/></svg><span>返回主页</span></a>
     <button id="mobile-panel-toggle" class="mobile-panel-toggle" data-os-click="click-124" aria-label="Show panels" aria-controls="panels" aria-expanded="false" aria-keyshortcuts="Alt+P" style="display:none">&#9776;</button>
 </div>
 
