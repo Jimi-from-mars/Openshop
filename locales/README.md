@@ -4,4 +4,4 @@ The editor follows the host site's `private-image-lab-language` preference on th
 
 Catalogs are embedded into the editor shell so translations work offline without an external translation service. After editing a catalog, run `node tools/sync-editor-locales.mjs`, `npm run security:write`, and `node tools/sync-editor-locales.mjs --check`. Preserve the English keys and placeholders across all catalogs.
 
-Static controls, detached tool menus and newly created dialogs are translated. Interface translation does not change canvas text, user layer names, form values, file contents or export formats. The brand and the host's **Back to home** link remain English. Settings retain the legacy `zh` locale for compatibility.
+Static controls, detached tool menus and newly created dialogs are translated. Interface translation does not change canvas text, user layer names, form values, file contents or export formats. The brand stays unchanged; the home link text and accessible name follow the selected language. Settings retain the legacy `zh` locale for compatibility.

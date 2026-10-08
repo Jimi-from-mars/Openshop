@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { loadOpenShop } from './os-harness.js';
 let OS;
 beforeEach(() => {
- document.body.innerHTML='<button id="file">File</button><label id="label">Width</label><select id="blend"><option>Multiply</option></select><input id="artwork" value="File"><span class="layer-name">File</span><div id="canvas-area"><span>File</span></div><a translate="no">Back to home</a>';
+ document.body.innerHTML='<button id="file">File</button><label id="label">Width</label><select id="blend"><option>Multiply</option></select><input id="artwork" value="File"><span class="layer-name">File</span><div id="canvas-area"><span>File</span></div><a class="editor-home-link" aria-label="Back to home">Back to home</a>';
  localStorage.clear();
  OS=loadOpenShop();
  OS._syncTextDirectionControl=vi.fn();
@@ -29,7 +29,8 @@ test('switching locales translates UI without changing option values, names or a
   expect(document.querySelector('#artwork').value).toBe('File');
   expect(document.querySelector('.layer-name').textContent).toBe('File');
   expect(document.querySelector('#canvas-area').textContent).toBe('File');
-  expect(document.querySelector('[translate="no"]').textContent).toBe('Back to home');
+  expect(document.querySelector('.editor-home-link').textContent).toBe(OS._locales[code]['Back to home']);
+  expect(document.querySelector('.editor-home-link').getAttribute('aria-label')).toBe(OS._locales[code]['Back to home']);
   expect(localStorage.getItem('private-image-lab-language')).toBe(code);
  }
 });

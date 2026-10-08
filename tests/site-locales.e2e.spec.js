@@ -25,7 +25,7 @@ for(const language of languages){
   });
   expect(await page.evaluate(()=>OS.canvas.getObjects().find(o=>o.text==='Width')?.text)).toBe('Width');
   await expect(page.locator('.layer-name').filter({hasText:/^File$/})).toHaveText('File');
-  await expect(page.getByRole('link',{name:'Back to home',exact:true})).toBeVisible();
+  await expect(page.getByRole('link',{name:messages['Back to home'],exact:true})).toBeVisible();
   await page.getByRole('button',{name:messages['Marquee: Rectangular Marquee Tool'],exact:true}).click();
   await expect(page.locator('.audit-tool-flyout.show')).toContainText(messages['Rectangular Marquee Tool']);
   const width=await page.locator('.audit-tool-flyout.show').evaluate(el=>el.getBoundingClientRect().width);
