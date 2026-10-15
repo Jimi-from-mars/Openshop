@@ -1,12 +1,13 @@
 'use strict';
 
-const SHELL_REVISION = '0.31.0-r8';
+const SHELL_REVISION = '0.31.0-r9';
 // State is origin-readable, so a cache name from it is never trusted merely
 // because it looks like a revision. Keep the bounded set of revisions this
 // worker knows were actually shipped; releases carry the newest predecessors
 // forward for rollback across skipped updates.
 const TRUSTED_SHELL_REVISIONS = new Set([
     SHELL_REVISION,
+    '0.31.0-r8',
     '0.31.0-r7',
     '0.31.0-r6',
     '0.31.0-r5',
@@ -525,8 +526,14 @@ async function activeRevision() {
 async function cachedShellResponse(request, revision, navigation = false, cacheName = shellCacheName(revision)) {
     const cache = await caches.open(cacheName);
     if (navigation) {
-        return await cache.match(resolveAsset('./index.html'))
+        const response = await cache.match(resolveAsset('./index.html'))
             || await cache.match(resolveAsset('./'));
+        // Directory hosts redirect index.html. Cached redirect history cannot
+        // satisfy a navigation with redirect mode manual (Chromium ERR_FAILED).
+        // Rebuild only redirected navigation responses; retain content and CSP.
+        return response?.redirected
+            ? new Response(response.body, { status:response.status, statusText:response.statusText, headers:response.headers })
+            : response;
     }
     return cache.match(request);
 }
